@@ -1,2 +1,1 @@
-# NLP-on-HappyDB
-What makes people happy?
+# What makes people happy?
