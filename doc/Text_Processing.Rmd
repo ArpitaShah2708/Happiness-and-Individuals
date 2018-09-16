@@ -1,0 +1,114 @@
+---
+title: "Stem Completion"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load all the required libraries
+
+```{r load libraries, warning=FALSE, message=FALSE}
+library(tm)
+library(tidytext)
+library(tidyverse)
+```
+
+
+### Load the data to be cleaned and processed
+
+```{r read data, warning=FALSE, message=FALSE}
+hm_data <- read_csv("cleaned_hm.csv")
+```
+
+### Preliminary cleaning of text
+
+```{r text processing in tm}
+to_space <- function(x) gsub("\\\\", " ", x)
+
+corpus <- VCorpus(VectorSource(hm_data$cleaned_hm))%>%
+  tm_map(content_transformer(to_space))%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removeWords, character(0))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeNumbers)%>%
+  tm_map(stripWhitespace)
+```
+
+### Stemming words and converting tm object to tidy object
+
+```{r stemming}
+stemmed <- tm_map(corpus, stemDocument) %>%
+  tidy() %>%
+  select(text)
+```
+
+### Creating tidy format of the dictionary to be used for completing stems
+
+```{r tidy dictionary}
+dict <- tidy(corpus) %>%
+  select(text) %>%
+  unnest_tokens(dictionary, text)
+```
+
+### Removing stopwords that don't hold any significant information for our data set
+
+```{r stopwords}
+data("stop_words")
+
+# Updating the list of stopwords in context of happy moments
+
+word <- c("happy","ago","yesterday","lot","today","months","month",
+                 "happier","happiest","last","week","past")
+
+stop_words <- stop_words %>%
+  bind_rows(mutate(tibble(word), lexicon = "updated"))
+```
+
+### Combining stems and dictionary into the same tibble
+
+```{r tidy stems with dictionary}
+completed <- stemmed %>%
+  mutate(id = row_number()) %>%
+  unnest_tokens(stems, text) %>%
+  bind_cols(dict) %>%
+  anti_join(stop_words, by = c("dictionary" = "word"))
+```
+
+### Stem completion
+
+```{r stem completion, warning=FALSE, message=FALSE}
+completed <- completed %>%
+  group_by(stems) %>%
+  count(dictionary) %>%
+  mutate(word = dictionary[which.max(n)]) %>%
+  ungroup() %>%
+  select(stems, word) %>%
+  distinct() %>%
+  right_join(completed) %>%
+  select(-stems)
+```
+
+### Pasting stem completed individual words into their respective happy moments
+
+```{r reverse unnest}
+completed <- completed %>%
+  group_by(id) %>%
+  summarise(text = str_c(word, collapse = " ")) %>%
+  ungroup()
+```
+
+### Keeping a track of the happy moments with their own ID
+
+```{r cleaned hm_data, warning=FALSE, message=FALSE}
+hm_data <- hm_data %>%
+  mutate(id = row_number()) %>%
+  inner_join(completed)
+```
+
+### Exporting the processed text data into a CSV file
+
+```{r export data}
+write_csv(hm_data, "processed_moments.csv")
+```

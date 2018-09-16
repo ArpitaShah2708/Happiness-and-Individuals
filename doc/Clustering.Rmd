@@ -1,0 +1,259 @@
+---
+title: "Data Exploration and Unsupervised Learning"
+author: "Arpita Shah"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Step 0 - Load the required libraries
+
+```{r load libraries, warning=FALSE, message=FALSE}
+library(readr)
+library(tidytext)
+library(tidyverse)
+library(ngram)
+library(wordcloud2)
+library(ggraph)
+library(igraph)
+library(tm)
+library(topicmodels)
+```
+
+## Step 1 - Loading the processed data
+
+```{r load data, warning=FALSE, message=FALSE}
+hm_data <- read_csv("processed_moments.csv")
+```
+
+```{r add word count, warning=FALSE, message=FALSE}
+hm_data <- hm_data %>%
+  select(wid, 
+         reflection_period,
+         ground_truth_category,
+         predicted_category,
+         id,
+         text) %>%
+  
+  # Counting the remaining number of words in each happy moment
+  mutate(count = sapply(hm_data$text, wordcount))
+
+summary(hm_data$count)
+```
+
+## Step 2 - Visualize the most frequent occurences. Here we count individual words as well as bigrams.
+
+### Individual terms
+
+```{r tokenize words, warning=FALSE, message=FALSE}
+# Tokenizing individual word from happy moments
+bag_of_words <-  hm_data %>%
+  unnest_tokens(word, text)
+
+# Counting the frequency of each token
+word_count <- bag_of_words %>%
+  count(word, sort = TRUE)
+```
+
+#### Bar Chart
+
+```{r overall barchart, warning=FALSE, message=FALSE}
+# Visualize the words with frequency greater than 2500 in the corpus
+word_count %>%
+  filter(n > 2500) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col() +
+  xlab(NULL) +
+  ylab("Word Frequency")+
+  coord_flip()
+```
+
+#### Word Cloud
+
+```{r overall wordcloud, warning=FALSE, message=FALSE}
+# Visualize the top 50 words in terms of frequency
+word_count %>%
+  slice(1:50) %>%
+  wordcloud2(size = 0.8,
+             rotateRatio = 0)
+```
+
+### Bigrams
+
+```{r creating bigrams, warning=FALSE, message=FALSE}
+# Tokenize happy moments into bigrams
+hm_bigrams <- hm_data %>%
+  filter(count != 1) %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+```
+
+##### Network graph
+
+```{r create graph object, warning=FALSE, message=FALSE}
+# Count the number of bigrams
+bigram_counts <- hm_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>%
+  count(word1, word2, sort = TRUE)
+
+# Create a graph object with edges going from first word in the bigram to the second word
+bigram_graph <- bigram_counts %>%
+  filter(n > 100) %>%
+  graph_from_data_frame()
+
+bigram_graph
+```
+
+```{r network graph, warning=FALSE, message=FALSE}
+# Visualize the bigrams as a network graph
+set.seed(123)
+
+a <- grid::arrow(type = "closed", length = unit(.1, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.05, 'inches')) +
+  geom_node_point(color = "skyblue", size = 3) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void()
+```
+
+## Step 3 - After exploratory data analysis, we train unsupervised learning algorithms on the collection of happy moments for Information Retrieval. We first do hard clustering using K-Means algorithm and then soft clustering using topic modeling.
+
+### K-means Clustering
+
+```{r create dtm, warning=FALSE, message=FALSE}
+# Treat each happy moment as a document
+# Creating a Document-Term Matrix with words that appear in at least 1% of the documents
+corpus <- VCorpus(VectorSource(hm_data$text))
+ndocs <- length(corpus)
+
+minTermFreq <- ndocs * 0.01
+maxTermFreq <- Inf
+
+dtm <- DocumentTermMatrix(corpus,
+                          control = list(
+                                bounds = list(global = c(minTermFreq, maxTermFreq))
+                              ))
+
+inspect(dtm)
+```
+
+```{r kmeans cluster, warning=FALSE, message=FALSE}
+# Calculating TF-IDF from Document-Term Matrix 
+dtm_tfidf <- weightTfIdf(dtm, normalize = TRUE)
+
+# K-means clustering with 7 clusters
+cl <- kmeans(as.matrix(dtm_tfidf), 7, nstart = 20, iter.max = 25)
+
+# Frequency of cluster assignments
+table(cl$cluster)
+```
+
+```{r join clusters with data, warning=FALSE, message=FALSE}
+# Updating happy moment ID
+hm_data <- hm_data %>%
+  mutate(updated_id = row_number())
+
+# Attaching cluster labels to the documents
+cluster_id <- tibble(cl$cluster) %>%
+  rename(cluster_id = 'cl$cluster') %>%
+  mutate(updated_id = row_number()) %>%
+  right_join(hm_data) %>%
+  select(updated_id, cluster_id, text)
+```
+
+```{r overall cluster distribution, warning=FALSE, message=FALSE}
+# Exploring distribution of words in each cluster
+cluster_words <- cluster_id %>%
+  unnest_tokens(word, text) %>%
+  count(cluster_id, word, sort = TRUE)
+
+# Top 10 words in each cluster
+cluster_words %>%
+  group_by(cluster_id) %>%
+  mutate(word = reorder(word, n)) %>%
+  top_n(10, n) %>%
+  ggplot(aes(word, n, fill = as.factor(cluster_id))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~as.factor(cluster_id), scales = "free") +
+  coord_flip()
+```
+
+```{r cluster wordclouds, warning=FALSE, message=FALSE}
+# Ignoring the top 2 words from each cluster and then creating word clouds
+wordcloud <- function(data, cluster_num, limit) {
+  
+  data %>%
+  filter(cluster_id == cluster_num) %>%
+  select(-cluster_id) %>%
+  slice(3:limit) %>%
+  wordcloud2(size = 0.8,
+               rotateRatio = 0)
+}
+
+# Word cloud for each cluster
+wordcloud(data = cluster_words, cluster_num = 1, limit = 50)
+wordcloud(data = cluster_words, cluster_num = 2, limit = 50)
+wordcloud(data = cluster_words, cluster_num = 3, limit = 50)
+wordcloud(data = cluster_words, cluster_num = 4, limit = 50)
+wordcloud(data = cluster_words, cluster_num = 5, limit = 50)
+wordcloud(data = cluster_words, cluster_num = 6, limit = 50)
+wordcloud(data = cluster_words, cluster_num = 7, limit = 50)
+```
+
+### Topic Modeling
+
+```{r drop empty documents, warning=FALSE, message=FALSE}
+# Removing empty documents
+dtm.new <- dtm[rowSums(as.matrix(dtm))>0, ]
+dtm.new
+```
+
+```{r topic model, warning=FALSE, message=FALSE}
+# Topic modeling for 7 topics
+lda <- LDA(dtm.new, k = 7, control = list(seed = 12345))
+```
+
+```{r beta matrix, warning=FALSE, message=FALSE}
+# Beta - per topic, per word probabilities
+topics <- tidy(lda, matrix = "beta")
+topics
+```
+
+```{r topic distribution, warning=FALSE, message=FALSE}
+# Top 10 words in each topic based on their beta values
+top_terms <- topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+```
+
+```{r beta spread, warning=FALSE, message=FALSE}
+# Exploring what separates one topic from the other
+beta_spread <- topics %>%
+  mutate(topic = paste0("topic", topic)) %>%
+  spread(topic, beta) %>%
+  filter(topic3 > .001 | topic5 > .001) %>%
+  mutate(log_ratio = log2(topic3 / topic5))
+
+beta_spread %>%
+  group_by(direction = log_ratio > 0) %>%
+  top_n(10, abs(log_ratio)) %>%
+  ungroup() %>%
+  mutate(term = reorder(term, log_ratio)) %>%
+  ggplot(aes(term, log_ratio)) +
+  geom_col() +
+  labs(y = "Log2 ratio of beta in topic 3 / topic 5") +
+  coord_flip()
+```
