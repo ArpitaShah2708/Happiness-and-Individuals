@@ -1,7 +1,9 @@
 ---
 title: "Data Exploration and Unsupervised Learning"
 author: "Arpita Shah"
-output: html_document
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -16,6 +18,8 @@ library(tidytext)
 library(tidyverse)
 library(ngram)
 library(wordcloud2)
+library(htmlwidgets)
+library(webshot)
 library(ggraph)
 library(igraph)
 library(tm)
@@ -25,7 +29,7 @@ library(topicmodels)
 ## Step 1 - Loading the processed data
 
 ```{r load data, warning=FALSE, message=FALSE}
-hm_data <- read_csv("processed_moments.csv")
+hm_data <- read_csv("../output/processed_moments.csv")
 ```
 
 ```{r add word count, warning=FALSE, message=FALSE}
@@ -69,16 +73,32 @@ word_count %>%
   xlab(NULL) +
   ylab("Word Frequency")+
   coord_flip()
+
+ggsave("../figs/Most_frequent_terms_barchart.png",
+       width = 8, height = 6)
 ```
 
 #### Word Cloud
 
 ```{r overall wordcloud, warning=FALSE, message=FALSE}
+#webshot::install_phantomjs()
+
 # Visualize the top 50 words in terms of frequency
-word_count %>%
+wc <- word_count %>%
   slice(1:50) %>%
-  wordcloud2(size = 0.8,
-             rotateRatio = 0)
+  wordcloud2(size = 0.75,
+             rotateRatio = 0.4,
+             minRotation = pi/2,
+             maxRotation = pi/2,
+             color = "random-light",
+             backgroundColor = "black")
+
+saveWidget(wc, "../figs/overall_wordcloud.html", selfcontained = FALSE)
+webshot::webshot("../figs/overall_wordcloud.html",
+                 "../figs/overall_wordcloud.png",
+                 vwidth = 800, vheight = 600,
+                 delay = 30)
+
 ```
 
 ### Bigrams
@@ -118,6 +138,9 @@ ggraph(bigram_graph, layout = "fr") +
   geom_node_point(color = "skyblue", size = 3) +
   geom_node_text(aes(label = name), repel = TRUE) +
   theme_void()
+
+ggsave("../figs/Most_frequent_bigram.png",
+       width = 8, height = 6)
 ```
 
 ## Step 3 - After exploratory data analysis, we train unsupervised learning algorithms on the collection of happy moments for Information Retrieval. We first do hard clustering using K-Means algorithm and then soft clustering using topic modeling.
@@ -180,28 +203,77 @@ cluster_words %>%
   geom_col(show.legend = FALSE) +
   facet_wrap(~as.factor(cluster_id), scales = "free") +
   coord_flip()
+
+ggsave("../figs/Most_frequent_terms_per_cluster.png",
+       width = 8, height = 6)
 ```
 
 ```{r cluster wordclouds, warning=FALSE, message=FALSE}
-# Ignoring the top 2 words from each cluster and then creating word clouds
+# Ignoring the top 2 words from each cluster to handle the size of words
+# for interpretation and then creating word clouds
 wordcloud <- function(data, cluster_num, limit) {
   
   data %>%
   filter(cluster_id == cluster_num) %>%
   select(-cluster_id) %>%
   slice(3:limit) %>%
-  wordcloud2(size = 0.8,
-               rotateRatio = 0)
+  wordcloud2(size = 0.75,
+             rotateRatio = 0.4,
+             minRotation = pi/2,
+             maxRotation = pi/2,
+             color = "random-light",
+             backgroundColor = "black")
 }
 
 # Word cloud for each cluster
-wordcloud(data = cluster_words, cluster_num = 1, limit = 50)
-wordcloud(data = cluster_words, cluster_num = 2, limit = 50)
-wordcloud(data = cluster_words, cluster_num = 3, limit = 50)
-wordcloud(data = cluster_words, cluster_num = 4, limit = 50)
-wordcloud(data = cluster_words, cluster_num = 5, limit = 50)
-wordcloud(data = cluster_words, cluster_num = 6, limit = 50)
-wordcloud(data = cluster_words, cluster_num = 7, limit = 50)
+wc1 <- wordcloud(data = cluster_words, cluster_num = 1, limit = 50)
+saveWidget(wc1, "../figs/wordcloud_cluster1.html", selfcontained = FALSE)
+webshot::webshot("../figs/wordcloud_cluster1.html",
+                 "../figs/wordcloud_cluster1.png",
+                 vwidth = 800, vheight = 600,
+                 delay = 30)
+
+wc2 <- wordcloud(data = cluster_words, cluster_num = 2, limit = 50)
+saveWidget(wc2, "../figs/wordcloud_cluster2.html", selfcontained = FALSE)
+webshot::webshot("../figs/wordcloud_cluster2.html",
+                 "../figs/wordcloud_cluster2.png",
+                 vwidth = 800, vheight = 600,
+                 delay = 30)
+
+wc3 <- wordcloud(data = cluster_words, cluster_num = 3, limit = 50)
+saveWidget(wc3, "../figs/wordcloud_cluster3.html", selfcontained = FALSE)
+webshot::webshot("../figs/wordcloud_cluster3.html",
+                 "../figs/wordcloud_cluster3.png",
+                 vwidth = 800, vheight = 600,
+                 delay = 30)
+
+wc4 <- wordcloud(data = cluster_words, cluster_num = 4, limit = 50)
+saveWidget(wc4, "../figs/wordcloud_cluster4.html", selfcontained = FALSE)
+webshot::webshot("../figs/wordcloud_cluster4.html",
+                 "../figs/wordcloud_cluster4.png",
+                 vwidth = 800, vheight = 600,
+                 delay = 30)
+
+wc5 <- wordcloud(data = cluster_words, cluster_num = 5, limit = 50)
+saveWidget(wc5, "../figs/wordcloud_cluster5.html", selfcontained = FALSE)
+webshot::webshot("../figs/wordcloud_cluster5.html",
+                 "../figs/wordcloud_cluster5.png",
+                 vwidth = 800, vheight = 600,
+                 delay = 30)
+
+wc6 <- wordcloud(data = cluster_words, cluster_num = 6, limit = 50)
+saveWidget(wc6, "../figs/wordcloud_cluster6.html", selfcontained = FALSE)
+webshot::webshot("../figs/wordcloud_cluster6.html",
+                 "../figs/wordcloud_cluster6.png",
+                 vwidth = 800, vheight = 600,
+                 delay = 30)
+
+wc7 <- wordcloud(data = cluster_words, cluster_num = 7, limit = 50)
+saveWidget(wc7, "../figs/wordcloud_cluster7.html", selfcontained = FALSE)
+webshot::webshot("../figs/wordcloud_cluster7.html",
+                 "../figs/wordcloud_cluster7.png",
+                 vwidth = 800, vheight = 600,
+                 delay = 30)
 ```
 
 ### Topic Modeling
@@ -237,6 +309,9 @@ top_terms %>%
   geom_col(show.legend = FALSE) +
   facet_wrap(~ topic, scales = "free") +
   coord_flip()
+
+ggsave("../figs/Most_frequent_terms_per_topic.png",
+       width = 8, height = 6)
 ```
 
 ```{r beta spread, warning=FALSE, message=FALSE}
@@ -256,4 +331,12 @@ beta_spread %>%
   geom_col() +
   labs(y = "Log2 ratio of beta in topic 3 / topic 5") +
   coord_flip()
+
+ggsave("../figs/topic3_vs_topic5.png",
+       width = 8, height = 6)
+
+# Similarly, we can explore the differences between other topics as well
+
+# However, k-means clustering seems to be doing a better job at clustering similar
+# documents here when compared to topic modeling
 ```
